@@ -45,6 +45,12 @@ struct QueuedFile {
     int retries_left{ max_retries };
 };
 
+struct QueuedForDeletionFile {
+    std::filesystem::path source{};
+    static int constexpr max_retries{ 5 };
+    int retries_left{ max_retries };
+};
+
 class Organizer {
 public:
     /// <summary>
@@ -109,7 +115,7 @@ private:
     /// </summary>
     HANDLE m_stop_event{ nullptr };
 
-    [[nodiscard]] static std::string print_guid_modern(REFKNOWNFOLDERID rfid) {
+    [[nodiscard]] static std::string get_string_guid(REFKNOWNFOLDERID rfid) {
         std::string guid_str{ std::format(
             "{{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
             rfid.Data1, rfid.Data2, rfid.Data3,
@@ -146,7 +152,12 @@ private:
     /// Holds files that failed to move due to sharing violations or active locks,
     /// awaiting deferred retry attempts.
     /// </summary>
-    std::vector<QueuedFile> m_retry_queue{};
+    std::vector<QueuedFile> m_retry_move_queue{};
+
+    /// <summary>
+    /// Holds files that failed deletion due, awaiting deferred retry attempts.
+    /// </summary>
+    std::vector<QueuedForDeletionFile> m_retry_deletion_queue{};
 
     /// <summary>
     /// Stores the path to the downloads folder if the constructor succeeds in getting it.
