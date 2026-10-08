@@ -46,6 +46,7 @@ struct QueuedFile {
 };
 
 struct QueuedForDeletionFile {
+    std::filesystem::path file_to_delete{};
     std::filesystem::path source{};
     static int constexpr max_retries{ 5 };
     int retries_left{ max_retries };
@@ -146,7 +147,13 @@ private:
     /// Re-attempts to move previously locked or busy files, removing items
     /// that succeed, exceed their retry limit, or no longer exist.
     /// </summary>
-    void process_retry_queue();
+    void process_move_queue();
+
+    /// <summary>
+    /// Re-attempts to delete previously locked or busy files, removing items
+    /// that succeed, exceed their retry limit, or no longer exist.
+    /// </summary>
+    void process_deletion_queue();
 
     /// <summary>
     /// Holds files that failed to move due to sharing violations or active locks,
