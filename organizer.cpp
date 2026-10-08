@@ -9,10 +9,11 @@ Organizer::Organizer() {
     m_stop_event = CreateEventW(nullptr, true, false, nullptr);
     if (!m_stop_event) {
         std::println(stderr, "Failed to create stop event: {:#X}.", GetLastError());
+        return;
     }
 
     wchar_t* known_folder_path{ nullptr };
-    if (const auto status{ SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &known_folder_path) };
+    if (auto const status{ SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &known_folder_path) };
         status != S_OK) {
         std::println(stderr, "Failed to locate Downloads folder: {:#x}.", static_cast<DWORD>(status));
         CoTaskMemFree(known_folder_path);
@@ -36,9 +37,73 @@ void Organizer::stop() const {
     }
 }
 
+bool Organizer::move_file(std::filesystem::path const& current_path, std::filesystem::path const& dest_path) {
+    std::error_code ec;
+    std::filesystem::rename(current_path, dest_path, ec);
+    if (!ec)
+        return false;
+
+    // Move failed due to the file being locked by another process.
+    if (ec.value() == ERROR_SHARING_VIOLATION
+        || ec.value() == ERROR_LOCK_VIOLATION
+        || ec.value() == ERROR_ACCESS_DENIED) {
+        std::println("File locked: {}. Added to retry queue.", current_path);
+
+        m_retry_queue.emplace_back(current_path, dest_path);
+        return false;
+        }
+
+    // Move failed due to destination being on a different disk
+    // Copy and delete file works across disks
+    if (ec.value() == ERROR_NOT_SAME_DEVICE) {
+        if (!copy_and_delete_file_to(current_path, dest_path)) {
+            std::println(stderr, "Could not copy and delete {} to {}: {}.",
+                current_path,
+                dest_path,
+                GetLastError());
+
+            return false;
+        }
+    }
+
+    // Otherwise just ignore it
+    std::println(stderr, "Could not move {} to {}: {}.",
+        current_path,
+        dest_path,
+        ec.message());
+
+    return true;
+}
+
+bool Organizer::copy_and_delete_file(std::filesystem::path const& current_path, std::filesystem::path const& dest_path) {
+    std::error_code ec;
+    std::filesystem::copy(current_path, dest_path, ec);
+    if (!ec) {
+        std::filesystem::remove(current_path, ec);
+        if (ec) {
+            std::println(stderr, "Could not delete file {}: {}", current_path, ec.value());
+        }
+
+        // todo()
+        return true;
+    }
+
+    // Copy failed due to the file being locked by another process.
+    if (ec.value() == ERROR_SHARING_VIOLATION
+        || ec.value() == ERROR_LOCK_VIOLATION
+        || ec.value() == ERROR_ACCESS_DENIED) {
+        std::println("Copy failed: File locked: {}. Added to retry queue.", current_path);
+
+        m_retry_queue.emplace_back(current_path, dest_path);
+        return false;
+    }
+
+    return true;
+}
+
 bool Organizer::cache_folder_id_to_path(REFKNOWNFOLDERID folder_id) {
     wchar_t* known_folder_path{ nullptr };
-    if (const auto status{ SHGetKnownFolderPath(folder_id, 0, nullptr, &known_folder_path) };
+    if (auto const status{ SHGetKnownFolderPath(folder_id, 0, nullptr, &known_folder_path) };
         status != S_OK) {
         std::println(stderr, "Failed to locate folder specified by {}: {:#x}.",
             print_guid_modern(folder_id),
@@ -52,14 +117,14 @@ bool Organizer::cache_folder_id_to_path(REFKNOWNFOLDERID folder_id) {
     return true;
 }
 
-std::filesystem::path Organizer::get_unique_destination(const std::filesystem::path& dest_path) {
+std::filesystem::path Organizer::get_unique_destination(std::filesystem::path const& dest_path) {
     if (!std::filesystem::exists(dest_path)) {
         return dest_path;
     }
 
-    const auto parent = dest_path.parent_path();
-    const auto stem = dest_path.stem().string();
-    const auto ext = dest_path.extension().string();
+    auto const parent = dest_path.parent_path();
+    auto const stem = dest_path.stem().string();
+    auto const ext = dest_path.extension().string();
 
     int counter = 1;
     std::filesystem::path candidate;
@@ -77,14 +142,14 @@ void Organizer::organize() {
     }
 
     std::error_code iter_ec;
-    for (const auto& dir_entry : std::filesystem::directory_iterator{ m_downloads_folder_path.value(), iter_ec }) {
+    for (auto const& dir_entry : std::filesystem::directory_iterator{ m_downloads_folder_path.value(), iter_ec }) {
         if (iter_ec || !dir_entry.is_regular_file()) 
             continue;
 
-        const auto& current_path_for_file{ dir_entry.path() };
+        auto const& current_path_for_file{ dir_entry.path() };
 
         // Ignore items already present in the queue.
-        const bool already_queued = std::ranges::any_of(m_retry_queue, [&](const QueuedFile& item) {
+        bool const already_queued = std::ranges::any_of(m_retry_queue, [&](QueuedFile const& item) {
             return item.source == current_path_for_file;
         });
         if (already_queued) 
@@ -109,29 +174,11 @@ void Organizer::organize() {
         }
 
         // Guaranteed to have new_path here.
-        const auto& new_path{ m_folder_id_to_path[folder_id_iterator->second] };
-        const auto dest_file{ get_unique_destination(new_path / current_path_for_file.filename()) };
+        auto const& new_path{ m_folder_id_to_path[folder_id_iterator->second] };
+        auto const dest_file{ get_unique_destination(new_path / current_path_for_file.filename()) };
 
-        std::error_code ec;
-        std::filesystem::rename(current_path_for_file, dest_file, ec);
-        if (ec) {
-            // If the file cannot be moved because it's locked, then add it to the queue
-            if (ec.value() == ERROR_SHARING_VIOLATION 
-                || ec.value() == ERROR_LOCK_VIOLATION
-                || ec.value() == ERROR_ACCESS_DENIED) {
-                std::println("File locked: {}. Added to retry queue.", current_path_for_file);
-
-                m_retry_queue.emplace_back(current_path_for_file, dest_file);
-                continue;
-            }
-
-            // Otherwise just ignore it
-            std::println(stderr, "Could not move {} to {}: {}.",
-                current_path_for_file,
-                dest_file,
-                ec.message());
+        if (!move_file(current_path_for_file, dest_file))
             continue;
-        }
 
         std::println("[X] {} -> {}.", current_path_for_file, dest_file);
     }
@@ -144,11 +191,10 @@ void Organizer::process_retry_queue() {
         if (!std::filesystem::exists(item.source))
             return true;
 
-        const auto final_dest = get_unique_destination(item.destination);
-        std::filesystem::rename(item.source, final_dest, ec);
+        auto const final_dest = get_unique_destination(item.destination);
 
         // File moved succesfully.
-        if (!ec) {
+        if (move_file(item.source, final_dest)) {
             std::println("[X] (Retry) {} -> {}.", item.source, final_dest);
             return true;
         }

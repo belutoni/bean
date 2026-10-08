@@ -17,15 +17,15 @@
 // ??????????????????????????????????????????????????????
 template <>
 struct std::formatter<std::filesystem::path> : std::formatter<std::string_view> {
-    auto format(const std::filesystem::path& p, std::format_context& ctx) const {
+    auto format(std::filesystem::path const& p, std::format_context const& ctx) const {
         auto u8{ p.u8string() };
-        std::string_view sv(reinterpret_cast<const char*>(u8.data()), u8.size());
+        std::string_view sv(reinterpret_cast<char const*>(u8.data()), u8.size());
         return std::formatter<std::string_view>::format(sv, ctx);
     }
 };
 
 struct KnownFolderIdHash {
-    size_t operator()(const KNOWNFOLDERID& guid) const noexcept {
+    size_t operator()(KNOWNFOLDERID const& guid) const noexcept {
         RPC_STATUS status;
         unsigned short hash_value{ UuidHash(const_cast<UUID*>(&guid), &status) };
         return static_cast<size_t>(hash_value);
@@ -33,7 +33,7 @@ struct KnownFolderIdHash {
 };
 
 struct KnownFolderIdEqual {
-    bool operator()(const KNOWNFOLDERID& lhs, const KNOWNFOLDERID& rhs) const noexcept {
+    bool operator()(KNOWNFOLDERID const& lhs, KNOWNFOLDERID const& rhs) const noexcept {
         return InlineIsEqualGUID(lhs, rhs) != 0;
     }
 };
@@ -41,7 +41,7 @@ struct KnownFolderIdEqual {
 struct QueuedFile {
     std::filesystem::path source{};
     std::filesystem::path destination{};
-    static constexpr int max_retries{ 5 };
+    static int constexpr max_retries{ 5 };
     int retries_left{ max_retries };
 };
 
@@ -58,8 +58,8 @@ public:
     ~Organizer();
 
     // Delete copy/move operations
-    Organizer(const Organizer&) = delete;
-    Organizer& operator=(const Organizer&) = delete;
+    Organizer(Organizer const&) = delete;
+    Organizer& operator=(Organizer const&) = delete;
     Organizer(Organizer&&) = delete;
     Organizer& operator=(Organizer&&) = delete;
 
@@ -87,6 +87,24 @@ private:
     Organizer();
 
     /// <summary>
+    /// Moves the file to the given destination, and if the move does not work,
+    /// it tries to copy and delete (after the copy succeeds) the file.
+    /// </summary>
+    /// <param name="current_path">The current path for the file.</param>
+    /// <param name="dest_path">The desired target path for the file.</param>
+    /// <returns>True if the file was succesfully moved/(copied and deleted); false otherwise</returns>
+    bool move_file(std::filesystem::path const& current_path, std::filesystem::path const& dest_path);
+
+    /// <summary>
+    /// Moves the file by copying the contents to the given destination
+    /// and deletes it after it succeeds.
+    /// </summary>
+    /// <param name="current_path">The current path for the file.</param>
+    /// <param name="dest_path">The desired target path for the file.</param>
+    /// <returns>True if the file was succesfully copied and deleted; false otherwise</returns>
+    bool copy_and_delete_file(std::filesystem::path const& current_path, std::filesystem::path const& dest_path);
+
+    /// <summary>
     /// 
     /// </summary>
     HANDLE m_stop_event{ nullptr };
@@ -108,7 +126,7 @@ private:
     /// </summary>
     /// <param name="dest_path">The desired target path for the file.</param>
     /// <returns>A collision-free filesystem path.</returns>
-    [[nodiscard]] static std::filesystem::path get_unique_destination(const std::filesystem::path& dest_path);
+    [[nodiscard]] static std::filesystem::path get_unique_destination(std::filesystem::path const& dest_path);
 
     /// <summary>
     /// Resolves the folder path for the specified known folder ID and caches
@@ -147,7 +165,7 @@ private:
     /// <summary>
     /// Maps supported file extensions to their corresponding target known folder IDs.
     /// </summary>
-    static inline const std::unordered_map<std::string, KNOWNFOLDERID> m_extension_to_folder_id{
+    static inline std::unordered_map<std::string, KNOWNFOLDERID> const m_extension_to_folder_id{
         // Pictures
         { ".png",   FOLDERID_Pictures },
         { ".jpeg",  FOLDERID_Pictures },
