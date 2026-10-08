@@ -4,6 +4,8 @@
 #include <thread>
 #include <algorithm>
 #include <ranges>
+#include <vector>
+
 #include "logger.h"
 
 Organizer::Organizer() {
@@ -47,7 +49,6 @@ bool Organizer::move_file(std::filesystem::path const& current_path, std::filesy
     if (!ec)
         return true;
 
-
     // Move failed due to the file being locked by another process.
     if (ec.value() == ERROR_SHARING_VIOLATION
         || ec.value() == ERROR_LOCK_VIOLATION
@@ -85,9 +86,10 @@ bool Organizer::copy_and_delete_file(std::filesystem::path const& current_path, 
 
             std::filesystem::remove(dest_path, ec);
             if (ec) {
-                log::error("Cannot delete destination({}) to revert to initial state of function due to an unhandled error code."
+                log::warn("Cannot delete destination({}) to revert to initial state of function due to an unhandled error code."
                     "Maybe the message provided by the std library can help: {}", dest_path, ec.message());
-                throw std::runtime_error("Cannot delete destination to revert to initial state of function due to an unhandled error code.");
+                m_retry_deletion_queue.emplace_back(dest_path, current_path);
+                return false;
             }
 
             return false;
@@ -163,6 +165,8 @@ void Organizer::organize() {
         // Ignore items already present in the queue.
         bool const already_queued = std::ranges::any_of(m_retry_move_queue, [&](QueuedFile const& item) {
             return item.source == current_path_for_file;
+        }) || std::ranges::any_of(m_retry_deletion_queue, [&](QueuedForDeletionFile const& item) {
+            return item.source == current_path_for_file;
         });
         if (already_queued) 
             continue;
@@ -194,7 +198,7 @@ void Organizer::organize() {
     }
 }
 
-void Organizer::process_retry_queue() {
+void Organizer::process_move_queue() {
     std::erase_if(m_retry_move_queue, [&](QueuedFile& item) {
         // File no longer exists.
         if (!std::filesystem::exists(item.source))
@@ -210,7 +214,33 @@ void Organizer::process_retry_queue() {
 
         // No more attempts left.
         if (item.retries_left <= 0) {
-            log::warn("File({}) could not be moved after {} retries due to an unhandled error code.", item.source, QueuedFile::max_retries);
+            log::warn("File({}) could not be moved after {} retries.", item.source, QueuedFile::max_retries);
+            return true;
+        }
+
+        // Try again later.
+        return false;
+    });
+}
+
+void Organizer::process_deletion_queue() {
+    std::erase_if(m_retry_deletion_queue, [&](QueuedForDeletionFile& item) {
+        // File no longer exists.
+        if (!std::filesystem::exists(item.file_to_delete))
+           return true;
+
+        std::error_code ec;
+        std::filesystem::remove(item.file_to_delete, ec);
+
+        // File deleted succesfully
+        if (!ec)
+            return true;
+
+        --item.retries_left;
+
+        // No more attempts left.
+        if (item.retries_left <= 0) {
+            log::warn("File({}) could not be deleted after {} retries.", item.file_to_delete, QueuedForDeletionFile::max_retries);
             return true;
         }
 
@@ -241,7 +271,7 @@ void Organizer::watch() {
     while (true) {
         // 'Sleep' until a notification is given. Wake up every 1000ms if there
         // are files waiting in the queue.
-        DWORD wait_time{ m_retry_move_queue.empty() ? INFINITE : 1000 };
+        DWORD wait_time{ (m_retry_move_queue.empty() && m_retry_deletion_queue.empty()) ? INFINITE : 1000 };
         DWORD wait_status{ WaitForMultipleObjects(2, wait_handles, false, wait_time) };
 
         switch (wait_status) {
@@ -255,7 +285,8 @@ void Organizer::watch() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
                 organize();
-                process_retry_queue();   
+                process_deletion_queue();
+                process_move_queue();
 
                 if (!FindNextChangeNotification(change_notification_handle)) {
                     log::error("FindNextChangeNotification failed to rearm the file_notify_handle. {:#X}", GetLastError());
@@ -266,7 +297,8 @@ void Organizer::watch() {
                 break;
 
             case WAIT_TIMEOUT:
-                process_retry_queue();
+                process_move_queue();
+                process_deletion_queue();
                 break;
 
             default:
