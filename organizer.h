@@ -93,7 +93,7 @@ private:
     /// <param name="current_path">The current path for the file.</param>
     /// <param name="dest_path">The desired target path for the file.</param>
     /// <returns>True if the file was succesfully moved/(copied and deleted); false otherwise</returns>
-    bool move_file(std::filesystem::path const& current_path, std::filesystem::path const& dest_path);
+    [[nodiscard]] bool move_file(std::filesystem::path const& current_path, std::filesystem::path const& dest_path);
 
     /// <summary>
     /// Moves the file by copying the contents to the given destination
@@ -102,7 +102,7 @@ private:
     /// <param name="current_path">The current path for the file.</param>
     /// <param name="dest_path">The desired target path for the file.</param>
     /// <returns>True if the file was succesfully copied and deleted; false otherwise</returns>
-    bool copy_and_delete_file(std::filesystem::path const& current_path, std::filesystem::path const& dest_path);
+    [[nodiscard]] bool copy_and_delete_file(std::filesystem::path const& current_path, std::filesystem::path const& dest_path);
 
     /// <summary>
     /// 
