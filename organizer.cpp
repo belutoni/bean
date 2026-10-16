@@ -11,14 +11,14 @@
 Organizer::Organizer() {
     m_stop_event = CreateEventW(nullptr, true, false, nullptr);
     if (!m_stop_event) {
-        log::error("CreateEventW failed for the stop event. ({:#X})", GetLastError());
+        logger::error("CreateEventW failed for the stop event. ({:#X})", GetLastError());
         throw std::runtime_error("CreateEventW failed for the stop event.");
     }
 
     wchar_t* known_folder_path{ nullptr };
     if (auto const status{ SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &known_folder_path) };
         status != S_OK) {
-        log::error("SHGetKnownFolderPath was unable to locate the Downloads folder. ({:#X})", static_cast<DWORD>(status));
+        logger::error("SHGetKnownFolderPath was unable to locate the Downloads folder. ({:#X})", static_cast<DWORD>(status));
 
         CoTaskMemFree(known_folder_path);
         CloseHandle(m_stop_event);
@@ -53,7 +53,7 @@ bool Organizer::move_file(std::filesystem::path const& current_path, std::filesy
     if (ec.value() == ERROR_SHARING_VIOLATION
         || ec.value() == ERROR_LOCK_VIOLATION
         || ec.value() == ERROR_ACCESS_DENIED) {
-        log::debug("File({}) is being used by another process. Added to the retry queue.", current_path);
+        logger::debug("File({}) is being used by another process. Added to the retry queue.", current_path);
         m_retry_move_queue.emplace_back(current_path, dest_path);
         return false;
     }
@@ -62,14 +62,14 @@ bool Organizer::move_file(std::filesystem::path const& current_path, std::filesy
     // so we fallback to copy and delete file.
     if (ec.value() == ERROR_NOT_SAME_DEVICE) {
         if (!copy_and_delete_file(current_path, dest_path)) {
-            log::warn("File({}) cannot be copied and deleted to destination({}).", current_path, dest_path);
+            logger::warn("File({}) cannot be copied and deleted to destination({}).", current_path, dest_path);
             return false;
         }
 
         return true;
     }
 
-    log::warn("File({}) cannot be moved to destination({}) due to an unhandled error code. "
+    logger::warn("File({}) cannot be moved to destination({}) due to an unhandled error code. "
         "Maybe the message provided by the std library can help: {}", current_path, dest_path, ec.message());
 
     return false;
@@ -81,12 +81,12 @@ bool Organizer::copy_and_delete_file(std::filesystem::path const& current_path, 
     if (!ec) {
         std::filesystem::remove(current_path, ec);
         if (ec) {
-            log::warn("File({}) cannot be deleted due to an unhandled error code."
+            logger::warn("File({}) cannot be deleted due to an unhandled error code."
                 "Maybe the message provided by the std library can help: {}", current_path, ec.message());
 
             std::filesystem::remove(dest_path, ec);
             if (ec) {
-                log::warn("Cannot delete destination({}) to revert to initial state of function due to an unhandled error code."
+                logger::warn("Cannot delete destination({}) to revert to initial state of function due to an unhandled error code."
                     "Maybe the message provided by the std library can help: {}", dest_path, ec.message());
                 m_retry_deletion_queue.emplace_back(dest_path, current_path);
                 return false;
@@ -102,13 +102,14 @@ bool Organizer::copy_and_delete_file(std::filesystem::path const& current_path, 
     if (ec.value() == ERROR_SHARING_VIOLATION
         || ec.value() == ERROR_LOCK_VIOLATION
         || ec.value() == ERROR_ACCESS_DENIED) {
-        log::debug("File({}) is being used by another process. Added to the retry queue.", current_path);
+        logger::debug("File({}) is being used by another process. Added to the retry queue.", current_path);
         m_retry_move_queue.emplace_back(current_path, dest_path);
         return false;
     }
 
-    log::warn("File({}) cannot be deleted due to an unhandled error code."
+    logger::warn("File({}) cannot be copied due to an unhandled error code."
         "Maybe the message provided by the std library can help: {}", current_path, ec.message());
+
     return false;
 }
 
@@ -118,7 +119,7 @@ bool Organizer::cache_folder_id_to_path(REFKNOWNFOLDERID folder_id) {
     wchar_t* known_folder_path{ nullptr };
     if (auto const status{ SHGetKnownFolderPath(folder_id, flags, nullptr, &known_folder_path) };
         status != S_OK) {
-        log::warn("SHGetKnownFolderPath was unable to locate the folder specified by KNOWNFOLDERID({}). {:#X}",
+        logger::warn("SHGetKnownFolderPath was unable to locate the folder specified by KNOWNFOLDERID({}). {:#X}",
             get_string_guid(folder_id), static_cast<DWORD>(status));
         CoTaskMemFree(known_folder_path);
         return false;
@@ -150,7 +151,7 @@ std::filesystem::path Organizer::get_unique_destination(std::filesystem::path co
 
 void Organizer::organize() {
     if (!m_downloads_folder_path.has_value()) {
-        log::error("Constructor was unable to provide a Downloads folder.");
+        logger::error("Constructor was unable to provide a Downloads folder.");
         return;
     }
 
@@ -194,7 +195,7 @@ void Organizer::organize() {
         if (!move_file(current_path_for_file, dest_file))
             continue;
 
-        log::info("Moved file({}) to destination({}).", current_path_for_file, dest_file);
+        logger::info("Moved file({}) to destination({}).", current_path_for_file, dest_file);
     }
 }
 
@@ -214,7 +215,7 @@ void Organizer::process_move_queue() {
 
         // No more attempts left.
         if (item.retries_left <= 0) {
-            log::warn("File({}) could not be moved after {} retries.", item.source, QueuedFile::max_retries);
+            logger::warn("File({}) could not be moved after {} retries.", item.source, QueuedFile::max_retries);
             return true;
         }
 
@@ -240,7 +241,7 @@ void Organizer::process_deletion_queue() {
 
         // No more attempts left.
         if (item.retries_left <= 0) {
-            log::warn("File({}) could not be deleted after {} retries.", item.file_to_delete, QueuedForDeletionFile::max_retries);
+            logger::warn("File({}) could not be deleted after {} retries.", item.file_to_delete, QueuedForDeletionFile::max_retries);
             return true;
         }
 
@@ -251,7 +252,7 @@ void Organizer::process_deletion_queue() {
 
 void Organizer::watch() {
     if (!m_downloads_folder_path.has_value()) {
-        log::error("Constructor was unable to provide a Downloads folder.");
+        logger::error("Constructor was unable to provide a Downloads folder.");
         return;
     }
 
@@ -260,7 +261,7 @@ void Organizer::watch() {
     HANDLE change_notification_handle{ FindFirstChangeNotificationW(m_downloads_folder_path->c_str(), false, FILE_NOTIFY_CHANGE_FILE_NAME) };
 
     if (change_notification_handle == INVALID_HANDLE_VALUE) {
-        log::error("FindFirstChangeNotificationW failed to create the file_notify_handle. {:#X}", GetLastError());
+        logger::error("FindFirstChangeNotificationW failed to create the file_notify_handle. {:#X}", GetLastError());
         return;
     }
 
@@ -289,7 +290,7 @@ void Organizer::watch() {
                 process_move_queue();
 
                 if (!FindNextChangeNotification(change_notification_handle)) {
-                    log::error("FindNextChangeNotification failed to rearm the file_notify_handle. {:#X}", GetLastError());
+                    logger::error("FindNextChangeNotification failed to rearm the file_notify_handle. {:#X}", GetLastError());
                     FindCloseChangeNotification(change_notification_handle);
                     return;
                 }
