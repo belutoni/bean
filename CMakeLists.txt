@@ -2,5 +2,11 @@ cmake_minimum_required(VERSION 4.3)
 project(bean)
 
 set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_executable(bean main.cpp)
+add_executable(bean 
+    main.cpp 
+    organizer.cpp 
+    organizer.h
+    logger.h
+)
