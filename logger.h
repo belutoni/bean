@@ -3,68 +3,67 @@
 //
 
 #ifndef BEAN_LOGGER_H
-#BEAN_LOGGER_H
+#define BEAN_LOGGER_H
+
+#define ENABLE_DEBUG_MODE
 
 #include <print>
 #include <format>
 #include <source_location>
 #include <string_view>
+#include <filesystem>
 
-namespace log {
+namespace logger {
+    template<typename... Args>
+    struct FormatWithLocation {
+        std::format_string<Args...> fmt;
+        std::source_location loc;
+
+        template<typename T>
+            requires std::is_convertible_v<T const&, std::string_view>
+        consteval FormatWithLocation(T const& str,
+            std::source_location const l = std::source_location::current())
+            : fmt(str), loc(l) {
+        }
+    };
 
     template<typename... Args>
-    void debug(std::source_location const loc, std::format_string<Args...> fmt, Args&&... args)
+    void info(FormatWithLocation<std::type_identity_t<Args>...> format_info, Args&&... args)
+    {
+        auto const& loc = format_info.loc;
+        std::println(stdout, "[INFO] [{}] {}",
+            loc.function_name(),
+            std::format(format_info.fmt, std::forward<Args>(args)...));
+    }
+
+    template<typename... Args>
+    void warn(FormatWithLocation<std::type_identity_t<Args>...> format_info, Args&&... args)
+    {
+        auto const& loc = format_info.loc;
+        std::println(stderr, "[WARN] [{}] {}",
+            loc.function_name(),
+            std::format(format_info.fmt, std::forward<Args>(args)...));
+    }
+
+    template<typename... Args>
+    void error(FormatWithLocation<std::type_identity_t<Args>...> format_info, Args&&... args)
+    {
+        auto const& loc = format_info.loc;
+        std::println(stderr, "[ERROR] [{}] {}",
+            loc.function_name(),
+            std::format(format_info.fmt, std::forward<Args>(args)...));
+    }
+
+    template<typename... Args>
+    void debug(FormatWithLocation<std::type_identity_t<Args>...> format_info, Args&&... args)
     {
 #ifdef ENABLE_DEBUG_MODE
-        std::println(stdout, "[DEBUG] [{}] {}", loc.function_name(),
-                     std::format(fmt, std::forward<Args>(args)...));
+        auto const& loc = format_info.loc;
+        std::println(stdout, "[DEBUG] [{}] {}",
+            loc.function_name(),
+            std::format(format_info.fmt, std::forward<Args>(args)...));
 #endif
-    }
-
-    template<typename... Args>
-    void debug(std::format_string<Args...> fmt, Args&&... args)
-    {
-        debug(std::source_location::current(), fmt, std::forward<Args>(args)...);
-    }
-
-    template<typename... Args>
-    void info(std::source_location const loc, std::format_string<Args...> fmt, Args&&... args)
-    {
-        std::println(stdout, "[INFO] [{}] {}", loc.function_name(),
-                     std::format(fmt, std::forward<Args>(args)...));
-    }
-
-    template<typename... Args>
-    void info(std::format_string<Args...> fmt, Args&&... args)
-    {
-        info(std::source_location::current(), fmt, std::forward<Args>(args)...);
-    }
-
-    template<typename... Args>
-    void warn(std::source_location const loc, std::format_string<Args...> fmt, Args&&... args)
-    {
-        std::println(stderr, "[WARN] [{}] {}", loc.function_name(),
-                     std::format(fmt, std::forward<Args>(args)...));
-    }
-
-    template<typename... Args>
-    void warn(std::format_string<Args...> fmt, Args&&... args)
-    {
-        warn(std::source_location::current(), fmt, std::forward<Args>(args)...);
-    }
-
-    template<typename... Args>
-    void error(std::source_location const loc, std::format_string<Args...> fmt, Args&&... args)
-    {
-        std::println(stderr, "[ERROR] [{}] {}", loc.function_name(),
-                     std::format(fmt, std::forward<Args>(args)...));
-    }
-
-    template<typename... Args>
-    void error(std::format_string<Args...> fmt, Args&&... args)
-    {
-        error(std::source_location::current(), fmt, std::forward<Args>(args)...);
     }
 }
 
-#endif //BEAN_LOGGER_H
+#endif // BEAN_LOGGER_H
