@@ -1,6 +1,6 @@
 # bean
 
-bean is a small Windows program that keeps your Downloads folder from turning into a junk drawer. It sits in the background, and whenever a file lands in Downloads it gets sent to Pictures, Documents or Videos, depending on what it is.
+bean is a small Windows program that keeps your Downloads folder from turning into a junk drawer. It sits in the background, and whenever a file lands in Downloads it gets sent to Pictures, Documents or Videos, depending on what it is. What goes where is up to you: drop an `extensions.cfg` next to `bean.exe` and list the extensions you want sent to each folder. No rebuild needed. See [Make your own rules](#make-your-own-rules).
 
 Windows only, written in C++23.
 
@@ -20,15 +20,17 @@ Anything bean doesn't recognize (like `setup.exe` and `backup.zip` above) stays 
 
 ## How it works
 
-When bean starts, it begins watching Downloads and then sorts whatever is already there, so files that arrive during that first pass aren't missed. After that it goes to sleep. Windows wakes it up when a file in Downloads is created, renamed or deleted. It waits half a second for the change to settle, sorts again, and goes back to sleep. It doesn't poll, so while nothing is happening it uses basically no CPU.
+When bean starts, it loads its extension mappings, begins watching Downloads, and then sorts whatever is already there, so files that arrive during that first pass aren't missed. After that it goes to sleep. Windows wakes it up when a file in Downloads is created, renamed or deleted. It waits half a second for the change to settle, sorts again, and goes back to sleep. It doesn't poll, so while nothing is happening it uses basically no CPU.
 
-Here is where things end up:
+Without a configuration file, this is where things end up:
 
 | Folder    | Extensions                                          |
 |-----------|-----------------------------------------------------|
 | Pictures  | `.png` `.jpg` `.jpeg` `.gif` `.bmp` `.webp`         |
 | Documents | `.pdf` `.doc` `.docx` `.xls` `.xlsx` `.pptx` `.txt` |
 | Videos    | `.mp4` `.mov` `.mkv` `.avi`                         |
+
+Don't like these? You can change all of it with a plain text file. It takes a minute, see [Make your own rules](#make-your-own-rules).
 
 ## The details
 
@@ -47,6 +49,7 @@ Here is where things end up:
 bean prints a line for every file it handles. This is roughly what you'll see:
 
 ```
+[INFO] [org::Organizer::load_extension_mappings] Loaded 17 extension mappings from configuration file 'C:\Tools\bean\extensions.cfg'.
 [INFO] [org::Organizer::move_file] Moved file(C:\Users\you\Downloads\holiday.jpg) to destination(C:\Users\you\Pictures\holiday.jpg).
 [INFO] [org::Organizer::move_file] Moved file(C:\Users\you\Downloads\invoice.pdf) to destination(C:\Users\you\Documents\invoice.pdf).
 [INFO] [org::Organizer::move_file] Moved file(C:\Users\you\Downloads\lecture.mp4) to destination(C:\Users\you\Videos\lecture.mp4).
@@ -66,6 +69,12 @@ If a file is locked, you get a warning (these go to stderr) on every attempt. Wi
 [DEBUG] [org::Organizer::process_move_queue] File(C:\Users\you\Downloads\movie.mkv) is still locked. 4 retries left.
 ...
 [WARN]  [org::Organizer::process_move_queue] File(C:\Users\you\Downloads\movie.mkv) could not be moved after 5 retries. Removing from retry queue.
+```
+
+If there is no configuration file, bean says so and carries on with the defaults:
+
+```
+[WARN] [org::Organizer::load_extension_mappings] Failed to open configuration file(C:\Tools\bean\extensions.cfg). Using default extension mappings.
 ```
 
 Info and debug messages go to stdout, warnings and errors go to stderr. Debug messages are off by default.
@@ -97,22 +106,87 @@ If you want it running all the time:
 2. Put a shortcut to `bean.exe` in the folder that opens.
 3. Right-click the shortcut, open Properties, and set **Run** to **Minimized** so the console stays out of the way.
 
-## Changing what gets sorted
+## Make your own rules
 
-For now the extension list is hardcoded. It lives in `m_extension_to_folder_id` at the bottom of `organizer.h`. To add an extension, add a line:
+bean sorts by the table at the top unless you tell it otherwise. To tell it otherwise, create a plain text file called **`extensions.cfg`** and put it **in the same folder as `bean.exe`**. It doesn't matter where you launch bean from, so a Startup shortcut finds it just fine.
 
-```cpp
-{ ".mp3", FOLDERID_Music },
+### Quick start
+
+1. Create a new text file next to `bean.exe` and name it `extensions.cfg` (make sure it isn't `extensions.cfg.txt`).
+2. Paste in the starter below and edit it.
+3. Restart bean. The file is read once at startup.
+
+```
+# bean configuration
+# Each line: <folder> <extension> <extension> ...
+# Anything after a # is a comment.
+
+pictures   .png .jpg .jpeg .gif .bmp .webp
+documents  .pdf .doc .docx .xls .xlsx .pptx .txt
+videos     .mp4 .mov .mkv .avi
+
+# Add your own:
 ```
 
-Any Windows `KNOWNFOLDERID` works as a target. Rebuild afterwards.
+This starter is exactly bean's built-in default plus one line for music, so it's a safe base to build on.
+
+### Syntax
+
+Every line has the same shape: a **folder name**, then one or more **extensions**, separated by spaces or tabs.
+
+```
+folder  .ext  .ext  .ext   # optional comment
+```
+
+- Folder names and extensions are **not case-sensitive**. `Pictures .PNG` works the same as `pictures .png`.
+- The leading dot on an extension is **optional**. `png` is the same as `.png`.
+- Lines starting with `#` are comments, and so is anything after a `#` at the end of a line. Blank lines are ignored.
+- A folder can appear on **more than one line**, so you can split a long list however you like.
+- If an extension is listed twice (even under different folders), **the last one wins**.
+- An extension can only have **one dot**. `.tar.gz` is skipped, because Windows only considers the last part of a file name. Use `.gz` instead.
+
+### Valid folder names
+
+These are the only folder names bean understands. They map to the matching Windows folders, so if you've moved one of them to another drive or into OneDrive, bean follows it.
+
+| Name        | Where files go                                                        |
+|-------------|-----------------------------------------------------------------------|
+| `pictures`  | Your Pictures folder                                                  |
+| `documents` | Your Documents folder                                                 |
+| `music`     | Your Music folder                                                     |
+| `playlists` | Your Playlists folder (normally inside Music)                         |
+| `videos`    | Your Videos folder                                                    |
+| `desktop`   | Your Desktop                                                          |
+| `games`     | Legacy Games folder. Modern Windows often doesn't have it.            |
+| `profile`   | The root of your user folder (`C:\Users\you`). Probably not what you want. |
+
+Any other name is reported as a warning and that line is skipped. The rest of the file still loads.
+
+### Things to know
+
+- **Your file replaces the defaults, it doesn't add to them.** If your file only says `pictures .png`, then PDFs and videos are no longer sorted. Keep the lines you still want.
+- **If the file is missing**, or none of its lines were valid, bean falls back to the built-in defaults and logs a warning.
+- **Check the output.** bean prints how many mappings it loaded, and a warning for every line or extension it couldn't use (unknown folder, bad extension, a folder with no extensions).
+- **Edits need a restart.** bean only reads the file when it starts.
+- **Only ASCII extensions** are matched.
+
+### Common mistakes
+
+| You wrote                        | What happens                                                    |
+|----------------------------------|-----------------------------------------------------------------|
+| `picture .png`                   | Unknown folder name (it's `pictures`). Line skipped.            |
+| `video .mp4`                     | Unknown folder name (it's `videos`). Line skipped.              |
+| `pictures`                       | No extensions given. Line skipped.                              |
+| `pictures .tar.gz`               | Extension has two dots. Skipped.                                |
+| `pictures .png, .jpg`            | The comma becomes part of `.png,`, which never matches (`.jpg` still works). Separate with spaces only. |
+| `extensions.cfg.txt`             | bean doesn't find the file and uses the defaults.               |
 
 ## Project layout
 
-- `organizer.h` / `organizer.cpp`: the `org::Organizer` class that watches Downloads and moves files.
+- `organizer.h` / `organizer.cpp`: the `org::Organizer` class that loads the configuration, watches Downloads and moves files. The built-in default mappings live in `load_default_extension_mappings` in `organizer.cpp`.
 - `winpp.h`: small RAII wrappers for Win32 handles, so the stop event and the folder watcher are always closed.
 - `logger.h`: the logging used for all output.
 
 ## Planned
 
-- A config file, so you can change extensions and target folders without touching the code or rebuilding.
+- Custom folder paths as targets, so files can go somewhere other than the standard Windows folders.
