@@ -173,16 +173,7 @@ namespace org {
         /// </summary>
         /// <param name="rfid">The known folder ID to convert.</param>
         /// <returns>The GUID formatted as a string.</returns>
-        [[nodiscard]] static std::string get_string_guid(REFKNOWNFOLDERID rfid) {
-            std::string guid_str{ std::format(
-                "{{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
-                rfid.Data1, rfid.Data2, rfid.Data3,
-                rfid.Data4[0], rfid.Data4[1], rfid.Data4[2], rfid.Data4[3],
-                rfid.Data4[4], rfid.Data4[5], rfid.Data4[6], rfid.Data4[7]
-            ) };
-
-            return guid_str;
-        }
+        [[nodiscard]] static std::string get_string_guid(REFKNOWNFOLDERID rfid);
 
         /// <summary>
         /// Resolves the folder path for the specified known folder ID and caches
