@@ -1,9 +1,4 @@
-//
-// Created by Antonie Gabriel Belu on 08/10/2026.
-//
-
-#ifndef BEAN_LOGGER_H
-#define BEAN_LOGGER_H
+#pragma once
 
 #define ENABLE_DEBUG_MODE
 
@@ -65,5 +60,3 @@ namespace logger {
 #endif
     }
 }
-
-#endif // BEAN_LOGGER_H
