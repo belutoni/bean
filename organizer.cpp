@@ -163,7 +163,7 @@ void org::Organizer::organize() {
         if (!m_folder_id_to_path.contains(folder_id) && !cache_folder_id_to_path(folder_id_iterator->second))
             continue;
 
-        // The path is already cacheded here
+        // The path is already cached here
         auto const& new_path{ m_folder_id_to_path[folder_id] };
         auto const base_dest{ new_path / source.filename() };
 
