@@ -167,7 +167,6 @@ These are the only folder names bean understands. They map to the matching Windo
 | `playlists` | Your Playlists folder (normally inside Music)                         |
 | `videos`    | Your Videos folder                                                    |
 | `desktop`   | Your Desktop                                                          |
-| `games`     | Legacy Games folder. Modern Windows often doesn't have it.            |
 | `profile`   | The root of your user folder (`C:\Users\you`). Probably not what you want. |
 
 Any other name is reported as a warning and that line is skipped. The rest of the file still loads.
