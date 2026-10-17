@@ -190,6 +190,26 @@ namespace org {
         void process_move_queue();
 
         /// <summary>
+        /// Reads file extension mappings from a configuration file
+        /// and populates the m_extension_to_folder_id map accordingly.
+        /// </summary>
+        void load_extension_mappings();
+
+        /// <summary>
+        /// Builds the path to the configuration file (extensions.cfg), which is
+        /// expected to sit in the same folder as the executable. Falls back to a
+        /// path relative to the working directory if the executable path cannot
+        /// be determined.
+        /// </summary>
+        /// <returns>The full path to the configuration file.</returns>
+        [[nodiscard]] static std::filesystem::path get_config_path();
+
+        /// <summary>
+        /// Replaces the current extension mappings with the built-in defaults.
+        /// </summary>
+        void load_default_extension_mappings();
+
+        /// <summary>
         /// Holds files that failed to move due to sharing violations or active locks,
         /// awaiting deferred retry attempts.
         /// </summary>
@@ -212,27 +232,19 @@ namespace org {
         /// <summary>
         /// Maps supported file extensions to their corresponding target known folder IDs.
         /// </summary>
-        static inline std::unordered_map<std::string, KNOWNFOLDERID> const m_extension_to_folder_id{
-            // Pictures
-            { ".png",   FOLDERID_Pictures },
-            { ".jpeg",  FOLDERID_Pictures },
-            { ".jpg",   FOLDERID_Pictures },
-            { ".gif",   FOLDERID_Pictures },
-            { ".bmp",   FOLDERID_Pictures },
-            { ".webp",  FOLDERID_Pictures },
-            // Documents
-            { ".pdf",   FOLDERID_Documents },
-            { ".docx",  FOLDERID_Documents },
-            { ".doc",   FOLDERID_Documents },
-            { ".xlsx",  FOLDERID_Documents },
-            { ".xls",   FOLDERID_Documents },
-            { ".pptx",  FOLDERID_Documents },
-            { ".txt",   FOLDERID_Documents },
-            // Videos
-            { ".mp4",   FOLDERID_Videos },
-            { ".mov",   FOLDERID_Videos },
-            { ".mkv",   FOLDERID_Videos },
-            { ".avi",   FOLDERID_Videos }
+        std::unordered_map<std::string, KNOWNFOLDERID> m_extension_to_folder_id;
+
+        /// <summary>
+        /// Maps user-facing folder names to their KNOWNFOLDERIDs.
+        /// </summary>
+        static inline std::unordered_map<std::string_view, KNOWNFOLDERID> const m_name_to_folder_id{
+            { "pictures",  FOLDERID_Pictures },
+            { "documents", FOLDERID_Documents },
+            { "music",     FOLDERID_Music },
+            { "playlists", FOLDERID_Playlists },
+            { "videos",    FOLDERID_Videos },
+            { "desktop",   FOLDERID_Desktop },
+            { "profile",   FOLDERID_Profile }
         };
     };
 }
