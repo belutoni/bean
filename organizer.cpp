@@ -4,6 +4,8 @@
 #include <thread>
 #include <algorithm>
 #include <ranges>
+#include <fstream>
+#include <sstream>
 #include <vector>
 
 #include "logger.h"
@@ -27,6 +29,8 @@ org::Organizer::Organizer() {
 
     m_downloads_folder_path.emplace(known_folder_path);
     CoTaskMemFree(known_folder_path);
+
+	load_extension_mappings();
 }
 
 void org::Organizer::stop() const {
@@ -203,6 +207,166 @@ void org::Organizer::process_move_queue() {
             break;
         }
     }
+}
+
+void org::Organizer::load_extension_mappings() {
+    auto const config_path{ get_config_path() };
+
+	std::ifstream config_file(config_path);
+	if (!config_file.is_open()) {
+		logger::warn("Failed to open configuration file({}). Using default extension mappings.", config_path);
+        load_default_extension_mappings();
+		return;
+	}
+
+	auto const lowercase_string = [](std::string& str) {
+		for (auto& c : str) {
+			if (c >= 'A' && c <= 'Z') {
+				c += ('a' - 'A');
+			}
+		}
+	};
+
+    int loaded_extensions_count{ 0 };
+    std::string line;
+    bool first_line{ true };
+	while (std::getline(config_file, line)) {
+        // Remove UTF-8 BOM if present on the first line
+        // Using first_line since it is cheaper than comparing the 
+        // first 3 bytes of every line to the BOM sequence.
+		std::string_view cleaned_line{ line };
+        if (first_line && cleaned_line.starts_with("\xEF\xBB\xBF")) {
+            cleaned_line.remove_prefix(3);
+        }
+        first_line = false;
+
+		// Skip lines that contain only whitespace
+        size_t const first_non_whitespace{ cleaned_line.find_first_not_of(" \t") };
+        if (first_non_whitespace == std::string_view::npos)
+            continue;
+
+		// Remove leading whitespace for easier parsing
+		cleaned_line.remove_prefix(first_non_whitespace);
+		
+		// Remove comments from the line
+        size_t const comment_pos{ cleaned_line.find('#') };
+		if (comment_pos != std::string_view::npos)
+			cleaned_line.remove_suffix(cleaned_line.size() - comment_pos);
+
+		if (cleaned_line.empty())
+			continue;
+
+		std::string const cleaned_line_str{ cleaned_line };
+        std::istringstream line_stream(cleaned_line_str);
+
+        std::string folder_name;
+        line_stream >> folder_name;
+
+		// Lowercase the folder name to ensure case-insensitive matching
+		lowercase_string(folder_name);
+
+		// Check if the folder name exists in the known folder mapping
+		auto const folder_id_it{ m_name_to_folder_id.find(folder_name) };
+		if (folder_id_it == m_name_to_folder_id.end()) {
+			logger::warn("Unknown folder name '{}' in configuration file. Skipping.", folder_name);
+			continue;
+		}
+
+		REFKNOWNFOLDERID const folder_id{ folder_id_it->second };
+		std::string extension;
+        bool loaded_extension{ false };
+        while (line_stream >> extension) {
+            if (extension == ".") {
+				logger::warn("Extension '.' in configuration file for folder '{}' is invalid. Skipping.", folder_name);
+                continue;
+            }
+
+            if (extension[0] != '.')
+                extension = "." + extension;
+
+            auto const dots_count = std::ranges::count(extension, '.');
+            if (dots_count > 1) {
+                logger::warn("Extension '{}' in configuration file for folder '{}' has {} dots. Only one or no dots are expected. Skipping.", extension, folder_name, dots_count);
+                continue;
+            }   
+
+            lowercase_string(extension);
+
+			m_extension_to_folder_id[extension] = folder_id;
+            loaded_extension = true;
+            ++loaded_extensions_count;
+        }
+
+		if (!loaded_extension)
+			logger::warn("No valid extensions specified for folder '{}' in configuration file. Skipping.", folder_name);
+	}
+
+	if (loaded_extensions_count == 0) {
+		logger::warn("No valid extension mappings were loaded from the configuration file '{}'. Using default extension mappings.", config_path);   
+		load_default_extension_mappings();
+        return;
+	}
+
+    logger::info("Loaded {} extension mappings from configuration file '{}'.", loaded_extensions_count, config_path);
+}
+
+void org::Organizer::load_default_extension_mappings() {
+    m_extension_to_folder_id = {
+        // Pictures
+        { ".png",   FOLDERID_Pictures },
+        { ".jpeg",  FOLDERID_Pictures },
+        { ".jpg",   FOLDERID_Pictures },
+        { ".gif",   FOLDERID_Pictures },
+        { ".bmp",   FOLDERID_Pictures },
+        { ".webp",  FOLDERID_Pictures },
+        // Documents
+        { ".pdf",   FOLDERID_Documents },
+        { ".docx",  FOLDERID_Documents },
+        { ".doc",   FOLDERID_Documents },
+        { ".xlsx",  FOLDERID_Documents },
+        { ".xls",   FOLDERID_Documents },
+        { ".pptx",  FOLDERID_Documents },
+        { ".txt",   FOLDERID_Documents },
+        // Videos
+        { ".mp4",   FOLDERID_Videos },
+        { ".mov",   FOLDERID_Videos },
+        { ".mkv",   FOLDERID_Videos },
+        { ".avi",   FOLDERID_Videos }
+    };
+}
+
+std::filesystem::path org::Organizer::get_config_path() {
+    std::wstring buffer(MAX_PATH, L'\0');
+
+    while (true) {
+        DWORD const length{ GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size())) };
+
+        // Failure: fall back to the working directory.
+        if (length == 0)
+            return L"extensions.cfg";
+
+        // Success: length excludes the null terminator and is smaller than the buffer.
+        if (length < buffer.size()) {
+            buffer.resize(length);
+            break;
+        }
+
+        // Truncated (length == buffer.size()): grow and retry.
+        buffer.resize(buffer.size() * 2);
+    }
+
+    return std::filesystem::path(buffer).parent_path() / L"extensions.cfg";
+}
+
+std::string org::Organizer::get_string_guid(REFKNOWNFOLDERID rfid) {
+    std::string guid_str{ std::format(
+        "{{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
+        rfid.Data1, rfid.Data2, rfid.Data3,
+        rfid.Data4[0], rfid.Data4[1], rfid.Data4[2], rfid.Data4[3],
+        rfid.Data4[4], rfid.Data4[5], rfid.Data4[6], rfid.Data4[7]
+    ) };
+
+    return guid_str;
 }
 
 void org::Organizer::watch() {
