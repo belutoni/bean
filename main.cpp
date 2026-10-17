@@ -8,6 +8,6 @@
 #include "organizer.h"
 
 int main() {
-    Organizer::instance().watch();
+    org::Organizer::instance().watch();
     return 0;
 }
