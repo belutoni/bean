@@ -1,5 +1,3 @@
-#include "organizer.h"
-
 #include <chrono>
 #include <thread>
 #include <algorithm>
@@ -8,6 +6,7 @@
 #include <sstream>
 #include <vector>
 
+#include "organizer.h"
 #include "logger.h"
 #include "winpp.h"
 
