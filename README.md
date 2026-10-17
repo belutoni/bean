@@ -49,19 +49,28 @@ Don't like these? You can change all of it with a plain text file. It takes a mi
 bean prints a line for every file it handles. This is roughly what you'll see:
 
 ```
-[INFO] [org::Organizer::load_extension_mappings] Loaded 17 extension mappings from configuration file 'C:\Tools\bean\extensions.cfg'.
-[INFO] [org::Organizer::move_file] Moved file(C:\Users\you\Downloads\holiday.jpg) to destination(C:\Users\you\Pictures\holiday.jpg).
-[INFO] [org::Organizer::move_file] Moved file(C:\Users\you\Downloads\invoice.pdf) to destination(C:\Users\you\Documents\invoice.pdf).
-[INFO] [org::Organizer::move_file] Moved file(C:\Users\you\Downloads\lecture.mp4) to destination(C:\Users\you\Videos\lecture.mp4).
+[INFO] Loaded 17 extension mappings from configuration file 'C:\Tools\bean\extensions.cfg'.
+[INFO] Moved file(C:\Users\you\Downloads\holiday.jpg) to destination(C:\Users\you\Pictures\holiday.jpg).
+[INFO] Moved file(C:\Users\you\Downloads\invoice.pdf) to destination(C:\Users\you\Documents\invoice.pdf).
+[INFO] Moved file(C:\Users\you\Downloads\lecture.mp4) to destination(C:\Users\you\Videos\lecture.mp4).
 ```
 
 A while later, you download another `invoice.pdf`. The first one is already in Documents, so the new one gets a number:
 
 ```
-[INFO] [org::Organizer::move_file] Moved file(C:\Users\you\Downloads\invoice.pdf) to destination(C:\Users\you\Documents\invoice (1).pdf).
+[INFO] Moved file(C:\Users\you\Downloads\invoice.pdf) to destination(C:\Users\you\Documents\invoice (1).pdf).
 ```
 
-If a file is locked, you get a warning (these go to stderr) on every attempt. With debug logging on you also see the retry countdown:
+If a file is locked, you get a warning (these go to stderr) on every attempt, and a final one when bean gives up:
+
+```
+[WARN] File(C:\Users\you\Downloads\movie.mkv) is locked or busy. Will retry later.
+[WARN] File(C:\Users\you\Downloads\movie.mkv) is locked or busy. Will retry later.
+...
+[WARN] File(C:\Users\you\Downloads\movie.mkv) could not be moved after 5 retries. Removing from retry queue.
+```
+
+In a debug build you also see the retry countdown, and every line shows the function that logged it:
 
 ```
 [WARN]  [org::Organizer::move_file] File(C:\Users\you\Downloads\movie.mkv) is locked or busy. Will retry later.
@@ -74,10 +83,10 @@ If a file is locked, you get a warning (these go to stderr) on every attempt. Wi
 If there is no configuration file, bean says so and carries on with the defaults:
 
 ```
-[WARN] [org::Organizer::load_extension_mappings] Failed to open configuration file(C:\Tools\bean\extensions.cfg). Using default extension mappings.
+[WARN] Failed to open configuration file(C:\Tools\bean\extensions.cfg). Using default extension mappings.
 ```
 
-Info and debug messages go to stdout, warnings and errors go to stderr. Debug messages are off by default.
+Info messages go to stdout, warnings and errors go to stderr. Debug messages are off by default. Debug builds also print debug messages and add the name of the function that logged each line (see [Building](#building)).
 
 ## Building
 
@@ -90,7 +99,7 @@ cmake --build build --config Release
 
 The executable will be somewhere under `build`, depending on your generator.
 
-To get debug messages, define `ENABLE_DEBUG_MODE` when you compile. In CMake that looks like this:
+To get a debug build, define `ENABLE_DEBUG_MODE` when you compile. It turns on the debug messages and adds the function name to every log line, which is handy when tracking down a problem. In CMake that looks like this:
 
 ```cmake
 target_compile_definitions(bean PRIVATE ENABLE_DEBUG_MODE)
@@ -126,6 +135,7 @@ documents  .pdf .doc .docx .xls .xlsx .pptx .txt
 videos     .mp4 .mov .mkv .avi
 
 # Add your own:
+music      .mp3 .flac .wav
 ```
 
 This starter is exactly bean's built-in default plus one line for music, so it's a safe base to build on.
