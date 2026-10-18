@@ -1,8 +1,6 @@
-// bean.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
-
 /*
-* Moves files from the Downloads/ folder to their corresponding folder
+* beand - Windows Daemon used to organize the Downloads folder by file type
+*       by moving files into their corresponding folders (e.g., .jpg to Pictures, .mp4 to Videos).
 */
 
 #include "organizer.h"
